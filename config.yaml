@@ -1,0 +1,54 @@
+server:
+  host: 0.0.0.0
+  port: 8400
+  reload: false
+
+models:
+  - name: gemini-flash
+    provider: gemini
+    model_id: gemini/gemini-2.5-flash
+    priority: 1
+    timeout_ms: 10000
+    max_retries: 1
+    weight: 70
+
+  - name: gemini-pro
+    provider: gemini
+    model_id: gemini/gemini-2.5-pro
+    priority: 2
+    timeout_ms: 30000
+    max_retries: 1
+    weight: 20
+
+  - name: mock-fallback
+    provider: mock
+    model_id: mock/default
+    priority: 3
+    timeout_ms: 5000
+    max_retries: 0
+    weight: 10
+
+routing:
+  strategy: priority  # priority | round-robin | latency-weighted
+  sla_latency_ms: 5000
+  max_fallback_attempts: 3
+
+circuit_breaker:
+  error_threshold: 5
+  recovery_window_s: 60
+  half_open_requests: 2
+
+health:
+  check_interval_s: 30
+  window_size: 50
+  unhealthy_error_rate: 0.5
+
+inference:
+  mock: false
+  temperature: 0.0
+  max_tokens: 1024
+
+tracker:
+  enabled: true
+  project_id: model-fallback-router
+  db_path: ./data/usage.db

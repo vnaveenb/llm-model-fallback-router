@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Fallback Router</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+            background: #0a0a0f;
+            color: #e0e0e8;
+            min-height: 100vh;
+            padding: 24px;
+        }
+        h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: #f0f0f5;
+            letter-spacing: -0.5px;
+        }
+        h1 span { color: #6366f1; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #12121a;
+            border: 1px solid #1e1e2e;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .card h3 {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+        .card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #f0f0f5;
+        }
+        .card .sub { font-size: 0.75rem; color: #6b7280; margin-top: 4px; }
+        .models-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+        }
+        .models-table th {
+            text-align: left;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #6b7280;
+            padding: 8px 12px;
+            border-bottom: 1px solid #1e1e2e;
+        }
+        .models-table td {
+            padding: 10px 12px;
+            font-size: 0.8rem;
+            border-bottom: 1px solid #1e1e2e;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge.healthy { background: #064e3b; color: #34d399; }
+        .badge.unhealthy { background: #7f1d1d; color: #fca5a5; }
+        .badge.disabled { background: #374151; color: #9ca3af; }
+        .badge.half-open { background: #78350f; color: #fbbf24; }
+        .sla-ok { color: #34d399; }
+        .sla-bad { color: #f87171; }
+        .bar-container {
+            width: 100%;
+            height: 6px;
+            background: #1e1e2e;
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .bar {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+        .bar.success { background: #34d399; }
+        .bar.fallback { background: #fbbf24; }
+        .bar.error { background: #f87171; }
+        .strategy-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #1e1b4b;
+            color: #a5b4fc;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .refresh-info {
+            font-size: 0.65rem;
+            color: #4b5563;
+            text-align: right;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1><span>⟁</span> Model Fallback Router</h1>
+    <div class="refresh-info">Auto-refresh: 5s | <span id="lastUpdate">—</span></div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Total Requests</h3>
+            <div class="value" id="totalRequests">0</div>
+            <div class="sub"><span id="successRate">0</span>% success rate</div>
+        </div>
+        <div class="card">
+            <h3>Avg Latency</h3>
+            <div class="value" id="avgLatency">0<span style="font-size:1rem">ms</span></div>
+            <div class="sub">SLA: <span id="slaTarget">5000</span>ms</div>
+        </div>
+        <div class="card">
+            <h3>Fallback Rate</h3>
+            <div class="value" id="fallbackRate">0<span style="font-size:1rem">%</span></div>
+            <div class="sub"><span id="fallbackCount">0</span> total fallbacks</div>
+        </div>
+        <div class="card">
+            <h3>SLA Violations</h3>
+            <div class="value sla-ok" id="slaViolations">0</div>
+            <div class="sub"><span id="slaViolationRate">0</span>% violation rate</div>
+        </div>
+        <div class="card">
+            <h3>Strategy</h3>
+            <div style="margin-top:8px"><span class="strategy-badge" id="strategy">priority</span></div>
+            <div class="sub" style="margin-top:8px"><span id="activeModels">0</span> active / <span id="unhealthyModels">0</span> unhealthy</div>
+        </div>
+        <div class="card">
+            <h3>Uptime</h3>
+            <div class="value" id="uptime">0<span style="font-size:1rem">s</span></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Model Status</h3>
+        <table class="models-table">
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Provider</th>
+                    <th>State</th>
+                    <th>Priority</th>
+                    <th>Requests</th>
+                    <th>Error Rate</th>
+                    <th>P50</th>
+                    <th>P95</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="modelsBody">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function refresh() {
+            try {
+                const [statsRes, modelsRes, healthRes] = await Promise.all([
+                    fetch('/stats'),
+                    fetch('/models'),
+                    fetch('/health'),
+                ]);
+                const stats = await statsRes.json();
+                const models = await modelsRes.json();
+                const health = await healthRes.json();
+
+                // Stats
+                document.getElementById('totalRequests').textContent = stats.total_requests;
+                const rate = stats.total_requests > 0 ? ((stats.successful / stats.total_requests) * 100).toFixed(1) : '0';
+                document.getElementById('successRate').textContent = rate;
+                document.getElementById('avgLatency').innerHTML = `${Math.round(stats.avg_latency_ms)}<span style="font-size:1rem">ms</span>`;
+                document.getElementById('fallbackRate').innerHTML = `${(stats.fallback_rate * 100).toFixed(1)}<span style="font-size:1rem">%</span>`;
+                document.getElementById('fallbackCount').textContent = stats.fallback_count;
+                document.getElementById('strategy').textContent = stats.strategy;
+                document.getElementById('activeModels').textContent = stats.active_models;
+                document.getElementById('unhealthyModels').textContent = stats.unhealthy_models;
+
+                const slaEl = document.getElementById('slaViolations');
+                slaEl.textContent = stats.sla_violations;
+                slaEl.className = stats.sla_violations > 0 ? 'value sla-bad' : 'value sla-ok';
+                document.getElementById('slaViolationRate').textContent = (stats.sla_violation_rate * 100).toFixed(1);
+
+                // Health
+                document.getElementById('uptime').innerHTML = `${formatUptime(health.uptime_seconds)}`;
+
+                // Models table
+                const tbody = document.getElementById('modelsBody');
+                tbody.innerHTML = models.map(m => `
+                    <tr>
+                        <td><strong>${m.name}</strong></td>
+                        <td>${m.provider}</td>
+                        <td><span class="badge ${m.state}">${m.state}</span></td>
+                        <td>${m.priority}</td>
+                        <td>${m.stats?.total_requests || 0}</td>
+                        <td>${m.stats ? (m.stats.error_rate * 100).toFixed(1) + '%' : '—'}</td>
+                        <td>${m.stats?.latency_p50 ? Math.round(m.stats.latency_p50) + 'ms' : '—'}</td>
+                        <td>${m.stats?.latency_p95 ? Math.round(m.stats.latency_p95) + 'ms' : '—'}</td>
+                        <td>
+                            ${m.state === 'disabled'
+                                ? `<button onclick="toggleModel('${m.name}', 'enable')" style="font-size:0.65rem;cursor:pointer;background:#064e3b;color:#34d399;border:none;padding:3px 8px;border-radius:4px;">Enable</button>`
+                                : `<button onclick="toggleModel('${m.name}', 'disable')" style="font-size:0.65rem;cursor:pointer;background:#7f1d1d;color:#fca5a5;border:none;padding:3px 8px;border-radius:4px;">Disable</button>`
+                            }
+                        </td>
+                    </tr>
+                `).join('');
+
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            } catch (e) {
+                console.error('Refresh failed:', e);
+            }
+        }
+
+        function formatUptime(seconds) {
+            if (seconds < 60) return `${Math.round(seconds)}<span style="font-size:1rem">s</span>`;
+            if (seconds < 3600) return `${Math.round(seconds / 60)}<span style="font-size:1rem">m</span>`;
+            return `${(seconds / 3600).toFixed(1)}<span style="font-size:1rem">h</span>`;
+        }
+
+        async function toggleModel(name, action) {
+            await fetch(`/models/${name}/${action}`, { method: 'POST' });
+            refresh();
+        }
+
+        refresh();
+        setInterval(refresh, 5000);
+    </script>
+</body>
+</html>

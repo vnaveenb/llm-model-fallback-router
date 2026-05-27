@@ -1,0 +1,23 @@
+services:
+  fallback-router:
+    build: .
+    container_name: model-fallback-router
+    ports:
+      - "8410:8400"
+    env_file: .env
+    environment:
+      - TRACKER_DB_PATH=/app/data/usage.db
+      - INFERENCE_MOCK=false
+    volumes:
+      - tracker_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8400/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  tracker_data:
+    external: true
