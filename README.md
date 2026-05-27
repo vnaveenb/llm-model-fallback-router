@@ -46,18 +46,18 @@ uvicorn src.api:app --host 0.0.0.0 --port 8400
 ## Docker
 
 ```bash
-# Build and run (mock mode by default)
+# Build and run (requires API keys in .env — see .env.example)
 docker compose up --build
 
-# To use real API keys, set them in .env or pass as environment variables
-# Example: docker compose up -d
+# To run in mock mode via Docker, override the environment variable:
+# INFERENCE_MOCK=true docker compose up --build
 ```
 
 ### Volumes
 
 | Volume | Purpose |
 |--------|---------|
-| `mfr_tracker_data` | Stores SQLite usage DB for cost tracking (shared with Project 6) |
+| `tracker_data` | Stores SQLite usage DB for cost tracking (shared with Project 6) |
 
 ---
 
@@ -132,7 +132,8 @@ curl -X POST http://localhost:8400/completions \
 
 ## Dashboard
 
-- Open [http://localhost:8410/](http://localhost:8410/) (or your mapped port)
+- **Docker**: [http://localhost:8410/](http://localhost:8410/) (mapped from container port 8400)
+- **Direct uvicorn**: [http://localhost:8400/](http://localhost:8400/)
 - See real-time model health, stats, and routing distribution
 - Enable/disable models and watch fallback in action
 
@@ -173,10 +174,10 @@ All settings are in [`config.yaml`](config.yaml):
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
-| `test_router.py` | 12 | Fallback chain, SLA, circuit breaker, round-robin, stats |
+| `test_router.py` | 11 | Fallback chain, SLA, circuit breaker, round-robin, model preference, stats |
 | `test_health.py` | 10 | Health tracker, circuit breaker, rolling window |
 | `test_api.py` | 10 | All endpoints, error handling, enable/disable |
-| `test_inference.py` | 4 | Mock/real mode, timeout, token counting |
+| `test_inference.py` | 5 | Mock/real mode, timeout, token counting, model_used field |
 
 ```bash
 # Run tests (mock mode, no API key needed)
@@ -192,13 +193,14 @@ docker run --rm model-fallback-router pytest tests/ -v
 
 ```mermaid
 flowchart TD
-    Client[Client / API] -->|POST /completions| Router
-    Router -->|Strategy: priority / round-robin / latency| ModelA[Model A]
+    Client[Client / API] -->|POST /completions| API[FastAPI]
+    API --> Router
+    Router -->|priority / round-robin / latency-weighted| ModelA[Model A]
     Router --> ModelB[Model B]
     Router --> ModelC[Model C]
-    ModelA & ModelB & ModelC --> Health[Health Tracker]
-    Health --> TrackerDB[SQLite Tracker DB]
-    TrackerDB --> Dashboard[Token Cost Dashboard (P6)]
+    Router -->|record outcome| Health[Health Tracker\nin-memory]
+    API -->|log_request| TrackerDB[SQLite Tracker DB]
+    TrackerDB --> Dashboard[Token Cost Dashboard - P6]
 ```
 
 ---
